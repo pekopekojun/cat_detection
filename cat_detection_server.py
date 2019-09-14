@@ -21,7 +21,6 @@ sys.path.append(LIB_DIR)
 
 from nets import ssd_vgg_300, ssd_common, np_methods
 from preprocessing import ssd_vgg_preprocessing
-from notebooks import visualization
 
 slim = tf.contrib.slim
 
@@ -78,6 +77,23 @@ def process_image(img, select_threshold=0.5, nms_threshold=.45, net_shape=(300, 
     rbboxes = np_methods.bboxes_resize(rbbox_img, rbboxes)
     return rclasses, rscores, rbboxes
 
+def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
+    shape = img.shape
+    colors = dict()
+    for i in range(bboxes.shape[0]):
+        cls_id = int(classes[i])
+        if cls_id not in colors:
+            colors[cls_id] = (int(255*random.random()), int(255*random.random()), int(255*random.random()))
+        color = colors[cls_id]
+        bbox = bboxes[i]
+        # Draw bounding box...
+        p1 = (int(bbox[0] * shape[0]), int(bbox[1] * shape[1]))
+        p2 = (int(bbox[2] * shape[0]), int(bbox[3] * shape[1]))
+        cv2.rectangle(img, p1[::-1], p2[::-1], color, thickness)
+        # Draw text...
+        s = '%s/%.3f' % (classes[i], scores[i])
+        p1 = (p1[0]-5, p1[1])
+        cv2.putText(img, s, p1[::-1], cv2.FONT_HERSHEY_DUPLEX, 0.4, color, 1)
 
 # flask
 app = Flask(__name__)
@@ -91,27 +107,25 @@ def upload_multipart():
     if 'image' not in request.files:
         make_response(jsonify({'result': 'No image file'}))
     file = request.files['image']
-    print(file)
     fileName = file.filename
     if '' == fileName:
         make_response(jsonify({'result': 'filename must not empty.'}))
-
-    saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_") \
-        + werkzeug.utils.secure_filename(fileName)
-    print(saveFileName)
-    file.save(os.path.join(UPLOAD_DIR, saveFileName))
 
     img_pil = Image.open(file.stream)
     img_numpy = np.asarray(img_pil)
     frame = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
 
     #cv2.imshow("Flame", frame) #無くてもいい
-    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR -> RGB順に
+    #img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR -> RGB順に
+    img =frame
     rclasses, rscores, rbboxes = process_image(img)
     for i in range(rclasses.shape[0]):
         cls_id = int(rclasses[i])
         if cls_id == 8:
-            visualization.plt_bboxes(img, rclasses, rscores, rbboxes)
+            #visualization.plt_bboxes(img, rclasses, rscores, rbboxes)
+            bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
+            saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
+            cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
 
     return make_response(jsonify({'result': 'upload OK.'}))
 
