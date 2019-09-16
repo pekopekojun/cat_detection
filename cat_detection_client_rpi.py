@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 if __name__ == "__main__":
-    URL = "http://192.168.10.120:5000/ssd"
+    URL = "http://192.168.10.204:5000/ssd"
     stream = io.BytesIO()
     with picamera.PiCamera() as camera:
         camera.resolution = (1920, 1080)
