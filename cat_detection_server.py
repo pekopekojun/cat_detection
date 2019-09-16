@@ -1,7 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding: utf-8
 
 import os
+import io
 import sys
 import math
 import random
@@ -56,8 +57,6 @@ tf_saver.restore(isess, ckpt_filename)
 ssd_anchors = ssd_net.anchors(net_shape)
 
 # Main image processing routine.
-
-
 def process_image(img, select_threshold=0.5, nms_threshold=.45, net_shape=(300, 300)):
     # Run SSD network.
     rimg, rpredictions, rlocalisations, rbbox_img = isess.run([image_4d, predictions, localisations, bbox_img],
@@ -133,31 +132,45 @@ app = Flask(__name__)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 UPLOAD_DIR = ".\\"
-
+counter = 0
 @app.route('/ssd', methods=['POST'])
-def upload_multipart():
+def upload():
     cat_info = []
-    if 'image' not in request.files:
-        return make_response(jsonify({'result': 'No image file'}))
+    try:
+        if 'image' not in request.files:
+            return make_response(jsonify({'result': 'No image file'}))
 
-    file = request.files['image']
+        file = request.files['image']
 
-    img_pil = Image.open(file.stream)
-    img_numpy = np.asarray(img_pil)
-    img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
+        img_pil = Image.open(file.stream)
+        img_numpy = np.asarray(img_pil)
+        img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
 
-    rclasses, rscores, rbboxes = process_image(img)
-    for i in range(rclasses.shape[0]):
-        cls_id = int(rclasses[i])
-        if cls_id == 8:
-            cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
-            saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
-            cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
+        rclasses, rscores, rbboxes = process_image(img)
+        for i in range(rclasses.shape[0]):
+            cls_id = int(rclasses[i])
+            if cls_id == 8:
+                cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
+                saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
+                cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
 
-    if(len(cat_info) != 0):
-        return make_response(jsonify({'result': 'nyan!', 'info': cat_info}))
-    return make_response(jsonify({'result': 'no cat'}))
+        global counter
+        txt = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        cv2.putText(img, txt, (0, 28), cv2.FONT_HERSHEY_DUPLEX, 1, (255,255,255), 1)
+        cv2.imwrite('ramdisk/image_' + str(counter) +'.jpg', img)
+        counter += 1
+        if(counter >= 16):
+            counter = 0
+
+        if(len(cat_info) != 0):
+            return make_response(jsonify({'result': 'nyan!', 'info': cat_info}))
+    except:
+        import traceback
+        traceback.print_exc()
+        pass
     
+    return make_response(jsonify({'result': 'no cat'}))
+
 @app.errorhandler(werkzeug.exceptions.RequestEntityTooLarge)
 def handle_over_max_file_size(error):
     print("werkzeug.exceptions.RequestEntityTooLarge")
@@ -167,4 +180,5 @@ def handle_over_max_file_size(error):
 if __name__ == "__main__":
     print(app.url_map)
     #app.run(host='192.168.10.120', port=5000, debug=False)
+    #app.run(host='192.168.10.204', port=5000, debug=False)
     app.run(host='', port=5000)
