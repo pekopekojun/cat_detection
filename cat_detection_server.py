@@ -25,14 +25,14 @@ from preprocessing import ssd_vgg_preprocessing
 slim = tf.contrib.slim
 
 # TensorFlow session: grow memory when needed. TF, DO NOT USE ALL MY GPU MEMORY!!!
-gpu_options = tf.GPUOptions(allow_growth=True)
-config = tf.ConfigProto(log_device_placement=False, gpu_options=gpu_options)
-isess = tf.InteractiveSession(config=config)
+gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
+config = tf.compat.v1.ConfigProto(log_device_placement=False, gpu_options=gpu_options)
+isess = tf.compat.v1.InteractiveSession(config=config)
 
 # Input placeholder.
 net_shape = (300, 300)
 data_format = 'NHWC'
-img_input = tf.placeholder(tf.uint8, shape=(None, None, 3))
+img_input = tf.compat.v1.placeholder(tf.uint8, shape=(None, None, 3))
 # Evaluation pre-processing: resize to SSD net shape.
 image_pre, labels_pre, bboxes_pre, bbox_img = ssd_vgg_preprocessing.preprocess_for_eval(
     img_input, None, None, net_shape, data_format, resize=ssd_vgg_preprocessing.Resize.WARP_RESIZE)
@@ -48,8 +48,8 @@ with slim.arg_scope(ssd_net.arg_scope(data_format=data_format)):
 # Restore SSD model.
 ckpt_filename = LIB_DIR+'checkpoints/ssd_300_vgg.ckpt'
 # ckpt_filename = '../checkpoints/VGG_VOC0712_SSD_300x300_ft_iter_120000.ckpt'
-isess.run(tf.global_variables_initializer())
-tf_saver = tf.train.Saver()
+isess.run(tf.compat.v1.global_variables_initializer())
+tf_saver = tf.compat.v1.train.Saver()
 tf_saver.restore(isess, ckpt_filename)
 
 # SSD default anchor boxes.
@@ -93,42 +93,34 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
         # Draw text...
         s = '%s/%.3f' % (classes[i], scores[i])
         p1 = (p1[0]-5, p1[1])
-        cv2.putText(img, s, p1[::-1], cv2.FONT_HERSHEY_DUPLEX, 0.4, color, 1)
+        cv2.putText(img, s, p1[::-1], cv2.FONT_HERSHEY_DUPLEX, 1, color, 1)
 
 # flask
 app = Flask(__name__)
 
-app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 UPLOAD_DIR = ".\\"
-
 
 @app.route('/ssd', methods=['POST'])
 def upload_multipart():
     if 'image' not in request.files:
         make_response(jsonify({'result': 'No image file'}))
     file = request.files['image']
-    fileName = file.filename
-    if '' == fileName:
+    if '' == file.filename:
         make_response(jsonify({'result': 'filename must not empty.'}))
-
     img_pil = Image.open(file.stream)
     img_numpy = np.asarray(img_pil)
-    frame = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
+    img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
 
-    #cv2.imshow("Flame", frame) #無くてもいい
-    #img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR -> RGB順に
-    img =frame
     rclasses, rscores, rbboxes = process_image(img)
     for i in range(rclasses.shape[0]):
         cls_id = int(rclasses[i])
         if cls_id == 8:
-            #visualization.plt_bboxes(img, rclasses, rscores, rbboxes)
             bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
             saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
             cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
 
     return make_response(jsonify({'result': 'upload OK.'}))
-
 
 @app.errorhandler(werkzeug.exceptions.RequestEntityTooLarge)
 def handle_over_max_file_size(error):
@@ -138,4 +130,5 @@ def handle_over_max_file_size(error):
 # main
 if __name__ == "__main__":
     print(app.url_map)
-    app.run(host='', port=5000)
+    app.run(host='192.168.10.120', port=5000, debug=False)
+    #app.run(host='', port=5000)
