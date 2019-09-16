@@ -25,6 +25,7 @@ if __name__ == "__main__":
             files = {'image': ('000001.jpg', stream.getvalue(), 'image/jpeg')}
             try:
                 r = requests.post(URL, files=files, timeout=10.0)
+                print(json.loads(r.text))
             except:
                 import traceback
                 traceback.print_exc()

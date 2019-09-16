@@ -78,22 +78,55 @@ def process_image(img, select_threshold=0.5, nms_threshold=.45, net_shape=(300, 
     return rclasses, rscores, rbboxes
 
 def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
+    # height, width = img.shape[:2]
+
+    #img = cv2.rectangle(img, center, radius, color[, thickness[, lineType[, shift]]])
+    # 引数
+    #   img: 描画対象の画像 (inplace で描画される)
+    #   pt1: 長方形の左上の点(x,y)
+    #   pt2: 長方形の右下の点(x,y)
+    #   color: 色
+    #   thickness: 太さ。負の値で塗りつぶし。
+    #   line_type: 線の種類
+    #   shift: オフセット
+    # 返り値
+    #   img: 描画結果
+    
     shape = img.shape
     colors = dict()
+    info = []
     for i in range(bboxes.shape[0]):
         cls_id = int(classes[i])
         if cls_id not in colors:
             colors[cls_id] = (int(255*random.random()), int(255*random.random()), int(255*random.random()))
         color = colors[cls_id]
         bbox = bboxes[i]
+        # bbox[0] : y, bbox[1] : x
         # Draw bounding box...
-        p1 = (int(bbox[0] * shape[0]), int(bbox[1] * shape[1]))
-        p2 = (int(bbox[2] * shape[0]), int(bbox[3] * shape[1]))
-        cv2.rectangle(img, p1[::-1], p2[::-1], color, thickness)
+        pic_y, pic_x = img.shape[:2]
+        
+        p1 = (int(bbox[1] * pic_x), int(bbox[0] * pic_y))
+        p2 = (int(bbox[3] * pic_x), int(bbox[2] * pic_y))
+        cv2.rectangle(img, p1, p2, color, thickness)
+
         # Draw text...
         s = '%s/%.3f' % (classes[i], scores[i])
-        p1 = (p1[0]-5, p1[1])
-        cv2.putText(img, s, p1[::-1], cv2.FONT_HERSHEY_DUPLEX, 1, color, 1)
+        cv2.putText(img, s, (p1[0], p1[1] - 5), cv2.FONT_HERSHEY_DUPLEX, 1, color, 1)
+        center = (
+            int(p1[0] + ((p2[0] - p1[0]) / 2)), 
+            int(p1[1] + ((p2[1] - p1[1]) / 2))
+            )
+
+        info.append({
+            "class":int(classes[i]), 
+            "score":int(scores[i]*100), 
+            "size":(pic_x, pic_y),
+            "bbox":(p1,p2), 
+            "center":center
+            })
+        #print(center)
+        #cv2.circle(img,center, 5, (0,0,255), -1)
+    return info
 
 # flask
 app = Flask(__name__)
@@ -103,11 +136,12 @@ UPLOAD_DIR = ".\\"
 
 @app.route('/ssd', methods=['POST'])
 def upload_multipart():
+    cat_info = []
     if 'image' not in request.files:
-        make_response(jsonify({'result': 'No image file'}))
+        return make_response(jsonify({'result': 'No image file'}))
+
     file = request.files['image']
-    if '' == file.filename:
-        make_response(jsonify({'result': 'filename must not empty.'}))
+
     img_pil = Image.open(file.stream)
     img_numpy = np.asarray(img_pil)
     img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
@@ -116,12 +150,14 @@ def upload_multipart():
     for i in range(rclasses.shape[0]):
         cls_id = int(rclasses[i])
         if cls_id == 8:
-            bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
+            cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
             saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
             cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
 
-    return make_response(jsonify({'result': 'upload OK.'}))
-
+    if(len(cat_info) != 0):
+        return make_response(jsonify({'result': 'nyan!', 'info': cat_info}))
+    return make_response(jsonify({'result': 'no cat'}))
+    
 @app.errorhandler(werkzeug.exceptions.RequestEntityTooLarge)
 def handle_over_max_file_size(error):
     print("werkzeug.exceptions.RequestEntityTooLarge")
@@ -130,5 +166,5 @@ def handle_over_max_file_size(error):
 # main
 if __name__ == "__main__":
     print(app.url_map)
-    app.run(host='192.168.10.120', port=5000, debug=False)
-    #app.run(host='', port=5000)
+    #app.run(host='192.168.10.120', port=5000, debug=False)
+    app.run(host='', port=5000)

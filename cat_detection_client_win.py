@@ -2,6 +2,7 @@
 import requests
 import cv2
 import numpy as np
+import json
 
 def send_win(url, buf):
     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100]
@@ -9,6 +10,7 @@ def send_win(url, buf):
     files = {'image': ('000001.jpg', encimg, 'image/jpeg')}
     try:
         r = requests.post(url, files=files, timeout = 1)
+        print(json.loads(r.text))
     except:
         pass
 
