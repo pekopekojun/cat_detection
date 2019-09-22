@@ -16,8 +16,10 @@ from flask import Flask, request, make_response, jsonify
 import werkzeug
 import json
 from datetime import datetime
+import requests
+import functools
 
-LIB_DIR='SSD/'
+LIB_DIR='SSD-Tensorflow/'
 sys.path.append(LIB_DIR)
 
 from nets import ssd_vgg_300, ssd_common, np_methods
@@ -57,7 +59,7 @@ tf_saver.restore(isess, ckpt_filename)
 ssd_anchors = ssd_net.anchors(net_shape)
 
 # Main image processing routine.
-def process_image(img, select_threshold=0.5, nms_threshold=.45, net_shape=(300, 300)):
+def process_image(img, select_threshold=0.4, nms_threshold=.45, net_shape=(300, 300)):
     # Run SSD network.
     rimg, rpredictions, rlocalisations, rbbox_img = isess.run([image_4d, predictions, localisations, bbox_img],
                                                               feed_dict={img_input: img})
@@ -76,6 +78,29 @@ def process_image(img, select_threshold=0.5, nms_threshold=.45, net_shape=(300, 
     rbboxes = np_methods.bboxes_resize(rbbox_img, rbboxes)
     return rclasses, rscores, rbboxes
 
+def get_label_name(c):
+    return ('none',
+            'aeroplane',
+            'bicycle',
+            'bird',
+            'boat',
+            'bottle',
+            'bus' ,
+            'car' ,
+            'cat' ,
+            'chair',
+            'cow',
+            'diningtable',
+            'dog',
+            'horse',
+            'motorbike',
+            'person',
+            'pottedplant',
+            'sheep',
+            'sofa',
+            'train',
+            'tvmonitor')[c]
+    
 def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
     # height, width = img.shape[:2]
 
@@ -109,8 +134,13 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
         cv2.rectangle(img, p1, p2, color, thickness)
 
         # Draw text...
-        s = '%s/%.3f' % (classes[i], scores[i])
-        cv2.putText(img, s, (p1[0], p1[1] - 5), cv2.FONT_HERSHEY_DUPLEX, 1, color, 1)
+        s = '%s/%.3f' % (get_label_name(int(classes[i])), scores[i])
+        if p1[1] > 20:
+            y =  p1[1] - 5
+        else:
+            y =  p1[1] + 30
+
+        cv2.putText(img, s, (p1[0],y), cv2.FONT_HERSHEY_DUPLEX, 1, color, 1)
         center = (
             int(p1[0] + ((p2[0] - p1[0]) / 2)), 
             int(p1[1] + ((p2[1] - p1[1]) / 2))
@@ -127,12 +157,30 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
         #cv2.circle(img,center, 5, (0,0,255), -1)
     return info
 
+def notify_line(name):
+    url = 'https://api.line.me/v2/bot/message/push'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer %s' % os.environ.get('LINE_ACCESS_TOKEN')
+    }
+    image_url = os.environ.get('LINE_IMAGE_SERVER') + '/' + name
+    data = {'to': os.environ.get('LINE_USER_ID'),
+            'messages': [{'type': 'text',
+                          'text': image_url
+                          },
+                         {'type': 'image',
+                          'originalContentUrl':image_url,
+                          'previewImageUrl': image_url
+                          }]
+            }
+    r = requests.post(url, headers=headers, data=json.dumps(data), verify=False)
+
+
 # flask
 app = Flask(__name__)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 UPLOAD_DIR = ".\\"
-counter = 0
 @app.route('/ssd', methods=['POST'])
 def upload():
     cat_info = []
@@ -147,20 +195,21 @@ def upload():
         img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
 
         rclasses, rscores, rbboxes = process_image(img)
-        for i in range(rclasses.shape[0]):
-            cls_id = int(rclasses[i])
-            if cls_id == 8:
-                cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
-                saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
-                cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
-
-        global counter
         txt = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         cv2.putText(img, txt, (0, 28), cv2.FONT_HERSHEY_DUPLEX, 1, (255,255,255), 1)
-        cv2.imwrite('ramdisk/image_' + str(counter) +'.jpg', img)
-        counter += 1
-        if(counter >= 16):
-            counter = 0
+        for i in range(rclasses.shape[0]):
+            cls_id = int(rclasses[i])
+            score = float(rscores[i])
+
+            cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
+            if cls_id == 8 or (cls_id == 15 and score >= 0.7):
+                saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
+                cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
+                notify_line(saveFileName + 'nora_cat.jpg')
+            else:
+                cat_info = []         
+
+        cv2.imwrite('ramdisk/latest.jpg', img)
 
         if(len(cat_info) != 0):
             return make_response(jsonify({'result': 'nyan!', 'info': cat_info}))
@@ -178,7 +227,10 @@ def handle_over_max_file_size(error):
 
 # main
 if __name__ == "__main__":
-    print(app.url_map)
-    #app.run(host='192.168.10.120', port=5000, debug=False)
-    #app.run(host='192.168.10.204', port=5000, debug=False)
-    app.run(host='', port=5000)
+    print("=================== ENV Start")
+    print(os.environ.get('LINE_ACCESS_TOKEN'))
+    print(os.environ.get('LINE_USER_ID'))
+    print(os.environ.get('LINE_IMAGE_SERVER'))
+    print("=================== ENV End")
+    sys.stdout.flush()
+    app.run(host='0.0.0.0', port=5000, debug=False)
