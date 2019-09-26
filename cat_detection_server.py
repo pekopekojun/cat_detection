@@ -15,9 +15,13 @@ from PIL import Image
 from flask import Flask, request, make_response, jsonify
 import werkzeug
 import json
-from datetime import datetime
+#from datetime import datetime
+import datetime
 import requests
 import functools
+import threading
+import glob
+import subprocess
 
 LIB_DIR='SSD-Tensorflow/'
 sys.path.append(LIB_DIR)
@@ -121,6 +125,10 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
     info = []
     for i in range(bboxes.shape[0]):
         cls_id = int(classes[i])
+        # Skip pottedplant
+        if cls_id == 16:
+            continue
+
         if cls_id not in colors:
             colors[cls_id] = (int(255*random.random()), int(255*random.random()), int(255*random.random()))
         color = colors[cls_id]
@@ -128,7 +136,7 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
         # bbox[0] : y, bbox[1] : x
         # Draw bounding box...
         pic_y, pic_x = img.shape[:2]
-        
+
         p1 = (int(bbox[1] * pic_x), int(bbox[0] * pic_y))
         p2 = (int(bbox[3] * pic_x), int(bbox[2] * pic_y))
         cv2.rectangle(img, p1, p2, color, thickness)
@@ -178,7 +186,7 @@ def notify_line(name):
 
 # flask
 app = Flask(__name__)
-
+count = 0
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 UPLOAD_DIR = ".\\"
 @app.route('/ssd', methods=['POST'])
@@ -195,21 +203,24 @@ def upload():
         img = cv2.cvtColor(img_numpy, cv2.COLOR_RGBA2BGR)
 
         rclasses, rscores, rbboxes = process_image(img)
-        txt = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        txt = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         cv2.putText(img, txt, (0, 28), cv2.FONT_HERSHEY_DUPLEX, 1, (255,255,255), 1)
+        saveFileName = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_")
         for i in range(rclasses.shape[0]):
             cls_id = int(rclasses[i])
             score = float(rscores[i])
 
             cat_info = bboxes_draw_on_img(img, rclasses, rscores, rbboxes)
             if cls_id == 8 or (cls_id == 15 and score >= 0.7):
-                saveFileName = datetime.now().strftime("%Y%m%d_%H%M%S_")
                 cv2.imwrite(saveFileName + 'nora_cat.jpg', img)
                 notify_line(saveFileName + 'nora_cat.jpg')
             else:
                 cat_info = []         
 
         cv2.imwrite('ramdisk/latest.jpg', img)
+        global count
+        cv2.imwrite('ramdisk/log_' + str(count) + '.jpg', img)
+        count += 1
 
         if(len(cat_info) != 0):
             return make_response(jsonify({'result': 'nyan!', 'info': cat_info}))
@@ -225,6 +236,18 @@ def handle_over_max_file_size(error):
     print("werkzeug.exceptions.RequestEntityTooLarge")
     return 'result : file size is overed.'
 
+def gooledrive():
+    subprocess.call(['skicka','upload','ramdisk/', 'picam/'])
+    subprocess.call(['skicka','upload','ramdisk/', 'picam/'])
+    now_minus1hour=datetime.datetime.now() - datetime.timedelta(minutes=10)
+    for l in glob.glob("ramdisk/log_*.jpg"):
+        timestamp = datetime.datetime.fromtimestamp(os.stat(l).st_mtime)
+        if timestamp < now_minus1hour:
+            os.remove(l)
+
+    t=threading.Timer(60*30,gooledrive)
+    t.start()
+
 # main
 if __name__ == "__main__":
     print("=================== ENV Start")
@@ -233,4 +256,7 @@ if __name__ == "__main__":
     print(os.environ.get('LINE_IMAGE_SERVER'))
     print("=================== ENV End")
     sys.stdout.flush()
+    t=threading.Thread(target=gooledrive)
+    t.start()
+
     app.run(host='0.0.0.0', port=5000, debug=False)

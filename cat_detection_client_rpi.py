@@ -27,7 +27,7 @@ if __name__ == "__main__":
             try:
                 r = requests.post(URL, files=files, timeout=10.0)
                 print(json.loads(r.text))
-                time.sleep(2)
+                #time.sleep(2)
             except:
                 import traceback
                 traceback.print_exc()
