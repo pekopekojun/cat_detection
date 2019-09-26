@@ -122,14 +122,18 @@ def bboxes_draw_on_img(img, classes, scores, bboxes, thickness=2):
     
     shape = img.shape
     colors = dict()
-    info = []
+    info = []   #b,g,r
+    colors[2] = (255,0,0)   # bycicle is blue
+    colors[7] = (0,255,255) # car is yellow
+    colors[8] = (0,0,255)   # cat is red
+    colors[15] = (0,255,0)  # person is green
     for i in range(bboxes.shape[0]):
         cls_id = int(classes[i])
         # Skip pottedplant
         if cls_id == 16:
             continue
 
-        if cls_id not in colors:
+        if cls_id not in colors: # other object is random color
             colors[cls_id] = (int(255*random.random()), int(255*random.random()), int(255*random.random()))
         color = colors[cls_id]
         bbox = bboxes[i]
@@ -216,7 +220,7 @@ def upload():
                 notify_line(saveFileName + 'nora_cat.jpg')
             else:
                 cat_info = []         
-
+       
         cv2.imwrite('ramdisk/latest.jpg', img)
         global count
         cv2.imwrite('ramdisk/log_' + str(count) + '.jpg', img)
