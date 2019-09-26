@@ -1,3 +1,5 @@
 SSD
 .vscode
+*.jpg
+*.png
 __pycache__
