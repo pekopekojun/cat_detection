@@ -241,8 +241,9 @@ def handle_over_max_file_size(error):
     return 'result : file size is overed.'
 
 def gooledrive():
-    subprocess.call(['skicka','upload','ramdisk/', 'picam/'])
-    subprocess.call(['skicka','upload','ramdisk/', 'picam/'])
+    date_dir = datetime.datetime.now().strftime("%Y_%m_%d/")
+    subprocess.call(['skicka','upload','ramdisk/', 'picam/'+date_dir])
+    subprocess.call(['skicka','upload','ramdisk/', 'picam/'+date_dir])
     now_minus1hour=datetime.datetime.now() - datetime.timedelta(minutes=10)
     for l in glob.glob("ramdisk/log_*.jpg"):
         timestamp = datetime.datetime.fromtimestamp(os.stat(l).st_mtime)
